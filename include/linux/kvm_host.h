@@ -30,6 +30,7 @@
 #include <linux/nospec.h>
 #include <linux/notifier.h>
 #include <asm/signal.h>
+#include <linux/hypiso.h>
 
 #include <linux/kvm.h>
 #include <linux/kvm_para.h>
@@ -361,7 +362,24 @@ struct kvm_vcpu {
 	 * it is a valid slot.
 	 */
 	int last_used_slot;
+
+	bool req_immediate_exit;
+	int vmrun_abort;
+	fastpath_t exit_fastpath;
+
+#ifdef CONFIG_HYPISO
+	struct task_struct *owner;
+	struct task_struct *runner;
+	struct list_head node; /* node in the VM-run and VM-exit queues */
+	bool vmrunnable;
+	bool vmexit_pending;
+	struct completion runner_activated;
+#endif
 };
+
+#define VMRUN_ABORT_NONE		0
+#define VMRUN_ABORT_OUT			1
+#define VMRUN_ABORT_CANCEL_INJECTION	2
 
 /* must be called with irqs disabled */
 static __always_inline void guest_enter_irqoff(void)

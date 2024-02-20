@@ -56,6 +56,7 @@
 #include <asm/processor.h>
 #include <asm/ioctl.h>
 #include <linux/uaccess.h>
+#include <linux/hypiso.h>
 
 #include "coalesced_mmio.h"
 #include "async_pf.h"
@@ -3642,6 +3643,8 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 	/* Fill the stats id string for the vcpu */
 	snprintf(vcpu->stats_id, sizeof(vcpu->stats_id), "kvm-%d/vcpu-%d",
 		 task_pid_nr(current), id);
+
+	hypiso_init_vcpu(vcpu);
 
 	/* Now it's all set up, let userspace reach it */
 	kvm_get_kvm(kvm);

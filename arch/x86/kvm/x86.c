@@ -59,6 +59,7 @@
 #include <linux/mem_encrypt.h>
 #include <linux/entry-kvm.h>
 #include <linux/suspend.h>
+#include <linux/hypiso.h>
 
 #include <trace/events/kvm.h>
 
@@ -3197,6 +3198,10 @@ static void record_steal_time(struct kvm_vcpu *vcpu)
 {
 	struct kvm_host_map map;
 	struct kvm_steal_time *st;
+
+#ifdef CONFIG_HYPISO
+	return;
+#endif
 
 	if (kvm_xen_msr_enabled(vcpu->kvm)) {
 		kvm_xen_runstate_set_running(vcpu);
@@ -8860,7 +8865,7 @@ static void kvm_inject_exception(struct kvm_vcpu *vcpu)
 	static_call(kvm_x86_queue_exception)(vcpu);
 }
 
-static int inject_pending_event(struct kvm_vcpu *vcpu, bool *req_immediate_exit)
+static int inject_pending_event(struct kvm_vcpu *vcpu)
 {
 	int r;
 	bool can_inject = true;
@@ -8994,14 +8999,14 @@ static int inject_pending_event(struct kvm_vcpu *vcpu, bool *req_immediate_exit)
 	if (is_guest_mode(vcpu) &&
 	    kvm_x86_ops.nested_ops->hv_timer_pending &&
 	    kvm_x86_ops.nested_ops->hv_timer_pending(vcpu))
-		*req_immediate_exit = true;
+		vcpu->req_immediate_exit = true;
 
 	WARN_ON(vcpu->arch.exception.pending);
 	return 0;
 
 out:
 	if (r == -EBUSY) {
-		*req_immediate_exit = true;
+		vcpu->req_immediate_exit = true;
 		r = 0;
 	}
 	return r;
@@ -9417,6 +9422,22 @@ void __kvm_request_immediate_exit(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_GPL(__kvm_request_immediate_exit);
 
+#ifdef CONFIG_HYPISO
+void hypiso_fpu_restore(struct kvm_vcpu *vcpu)
+{
+	if (test_ti_thread_flag(task_thread_info(vcpu->owner), TIF_NEED_FPU_LOAD)) {
+		hypiso_switch_fpu_return(vcpu->owner);
+	}
+}
+#else /* CONFIG_HYPISO */
+void hypiso_fpu_restore(struct kvm_vcpu *vcpu)
+{
+	fpregs_assert_state_consistent();
+	if (test_thread_flag(TIF_NEED_FPU_LOAD))
+		switch_fpu_return();
+}
+#endif /* CONFIG_HYPISO */
+
 /*
  * Returns 1 to let vcpu_run() continue the guest execution loop without
  * exiting to the userspace.  Otherwise, the value will be returned to the
@@ -9428,9 +9449,10 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	bool req_int_win =
 		dm_request_for_irq_injection(vcpu) &&
 		kvm_cpu_accept_dm_intr(vcpu);
-	fastpath_t exit_fastpath;
 
-	bool req_immediate_exit = false;
+	vcpu->req_immediate_exit = false;
+	vcpu->vmrun_abort = VMRUN_ABORT_NONE;
+	vcpu->exit_fastpath = EXIT_FASTPATH_NONE;
 
 	/* Forbid vmenter if vcpu dirty ring is soft-full */
 	if (unlikely(vcpu->kvm->dirty_ring_size &&
@@ -9454,17 +9476,8 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		}
 		if (kvm_check_request(KVM_REQ_MMU_RELOAD, vcpu))
 			kvm_mmu_unload(vcpu);
-		if (kvm_check_request(KVM_REQ_MIGRATE_TIMER, vcpu))
-			__kvm_migrate_timers(vcpu);
 		if (kvm_check_request(KVM_REQ_MASTERCLOCK_UPDATE, vcpu))
 			kvm_gen_update_masterclock(vcpu->kvm);
-		if (kvm_check_request(KVM_REQ_GLOBAL_CLOCK_UPDATE, vcpu))
-			kvm_gen_kvmclock_update(vcpu);
-		if (kvm_check_request(KVM_REQ_CLOCK_UPDATE, vcpu)) {
-			r = kvm_guest_time_update(vcpu);
-			if (unlikely(r))
-				goto out;
-		}
 		if (kvm_check_request(KVM_REQ_MMU_SYNC, vcpu))
 			kvm_mmu_sync_roots(vcpu);
 		if (kvm_check_request(KVM_REQ_LOAD_MMU_PGD, vcpu))
@@ -9501,8 +9514,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 			r = 1;
 			goto out;
 		}
-		if (kvm_check_request(KVM_REQ_STEAL_UPDATE, vcpu))
-			record_steal_time(vcpu);
 		if (kvm_check_request(KVM_REQ_SMI, vcpu))
 			process_smi(vcpu);
 		if (kvm_check_request(KVM_REQ_NMI, vcpu))
@@ -9580,7 +9591,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 			goto out;
 		}
 
-		r = inject_pending_event(vcpu, &req_immediate_exit);
+		r = inject_pending_event(vcpu);
 		if (r < 0) {
 			r = 0;
 			goto out;
@@ -9597,6 +9608,74 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	r = kvm_mmu_reload(vcpu);
 	if (unlikely(r)) {
 		goto cancel_injection;
+	}
+
+	srcu_read_unlock(&vcpu->kvm->srcu, vcpu->srcu_idx);
+	smp_mb__after_srcu_read_unlock();
+
+	hypiso_host_vmrun(vcpu);
+
+	vcpu->srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
+
+	if (vcpu->vmrun_abort == VMRUN_ABORT_OUT) {
+		r = 1;
+		goto out;
+	}
+	if (vcpu->vmrun_abort == VMRUN_ABORT_CANCEL_INJECTION) {
+		r = 1;
+		goto cancel_injection;
+	}
+
+	/*
+	 * Profile KVM exit RIPs:
+	 */
+	if (unlikely(prof_on == KVM_PROFILING)) {
+		unsigned long rip = kvm_rip_read(vcpu);
+		profile_hit(KVM_PROFILING, (void *)rip);
+	}
+
+	if (unlikely(vcpu->arch.tsc_always_catchup))
+		kvm_make_request(KVM_REQ_CLOCK_UPDATE, vcpu);
+
+	if (vcpu->arch.apic_attention)
+		kvm_lapic_sync_from_vapic(vcpu);
+
+	r = static_call(kvm_x86_handle_exit)(vcpu, vcpu->exit_fastpath);
+	return r;
+
+cancel_injection:
+	if (vcpu->req_immediate_exit)
+		kvm_make_request(KVM_REQ_EVENT, vcpu);
+	static_call(kvm_x86_cancel_injection)(vcpu);
+	if (unlikely(vcpu->arch.apic_attention))
+		kvm_lapic_sync_from_vapic(vcpu);
+out:
+	return r;
+}
+
+/*
+ * This code was originally part of vcpu_enter_guest, but we cut it out in order
+ * to run it isolated on a guest core.
+ */
+void hypiso_vcpu_run(struct kvm_vcpu *vcpu)
+{
+	vcpu->srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
+
+	if (kvm_request_pending(vcpu)) {
+		if (kvm_check_request(KVM_REQ_MIGRATE_TIMER, vcpu))
+			__kvm_migrate_timers(vcpu);
+		if (kvm_check_request(KVM_REQ_GLOBAL_CLOCK_UPDATE, vcpu))
+			kvm_gen_kvmclock_update(vcpu);
+		if (kvm_check_request(KVM_REQ_CLOCK_UPDATE, vcpu)) {
+			if (unlikely(kvm_guest_time_update(vcpu))) {
+				vcpu->vmrun_abort = VMRUN_ABORT_OUT;
+				srcu_read_unlock(&vcpu->kvm->srcu, vcpu->srcu_idx);
+				smp_mb__after_srcu_read_unlock();
+				return;
+			}
+		}
+		if (kvm_check_request(KVM_REQ_STEAL_UPDATE, vcpu))
+			record_steal_time(vcpu);
 	}
 
 	preempt_disable();
@@ -9639,19 +9718,16 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		smp_wmb();
 		local_irq_enable();
 		preempt_enable();
-		vcpu->srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
-		r = 1;
-		goto cancel_injection;
+		vcpu->vmrun_abort = VMRUN_ABORT_CANCEL_INJECTION;
+		return;
 	}
 
-	if (req_immediate_exit) {
+	if (vcpu->req_immediate_exit) {
 		kvm_make_request(KVM_REQ_EVENT, vcpu);
 		static_call(kvm_x86_request_immediate_exit)(vcpu);
 	}
 
-	fpregs_assert_state_consistent();
-	if (test_thread_flag(TIF_NEED_FPU_LOAD))
-		switch_fpu_return();
+	hypiso_fpu_restore(vcpu);
 
 	if (unlikely(vcpu->arch.switch_db_regs)) {
 		set_debugreg(0, 7);
@@ -9664,15 +9740,15 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	}
 
 	for (;;) {
-		exit_fastpath = static_call(kvm_x86_run)(vcpu);
-		if (likely(exit_fastpath != EXIT_FASTPATH_REENTER_GUEST))
+		vcpu->exit_fastpath = static_call(kvm_x86_run)(vcpu);
+		if (likely(vcpu->exit_fastpath != EXIT_FASTPATH_REENTER_GUEST))
 			break;
 
 		if (vcpu->arch.apicv_active)
 			static_call(kvm_x86_sync_pir_to_irr)(vcpu);
 
 		if (unlikely(kvm_vcpu_exit_request(vcpu))) {
-			exit_fastpath = EXIT_FASTPATH_EXIT_HANDLED;
+			vcpu->exit_fastpath = EXIT_FASTPATH_EXIT_HANDLED;
 			break;
 		}
 	}
@@ -9740,34 +9816,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 
 	local_irq_enable();
 	preempt_enable();
-
-	vcpu->srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
-
-	/*
-	 * Profile KVM exit RIPs:
-	 */
-	if (unlikely(prof_on == KVM_PROFILING)) {
-		unsigned long rip = kvm_rip_read(vcpu);
-		profile_hit(KVM_PROFILING, (void *)rip);
-	}
-
-	if (unlikely(vcpu->arch.tsc_always_catchup))
-		kvm_make_request(KVM_REQ_CLOCK_UPDATE, vcpu);
-
-	if (vcpu->arch.apic_attention)
-		kvm_lapic_sync_from_vapic(vcpu);
-
-	r = static_call(kvm_x86_handle_exit)(vcpu, exit_fastpath);
-	return r;
-
-cancel_injection:
-	if (req_immediate_exit)
-		kvm_make_request(KVM_REQ_EVENT, vcpu);
-	static_call(kvm_x86_cancel_injection)(vcpu);
-	if (unlikely(vcpu->arch.apic_attention))
-		kvm_lapic_sync_from_vapic(vcpu);
-out:
-	return r;
 }
 
 static inline int vcpu_block(struct kvm *kvm, struct kvm_vcpu *vcpu)

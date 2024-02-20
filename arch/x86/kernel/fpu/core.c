@@ -419,6 +419,36 @@ void switch_fpu_return(void)
 }
 EXPORT_SYMBOL_GPL(switch_fpu_return);
 
+/*
+ * Load FPU context of the given task -- cf. switch_fpu_return
+ */
+void hypiso_switch_fpu_return(struct task_struct *task)
+{
+	struct fpu *fpu;
+	int cpu;
+
+	if (!static_cpu_has(X86_FEATURE_FPU))
+		return;
+
+	fpu = &task->thread.fpu;
+	cpu = smp_processor_id();
+
+	if (WARN_ON_ONCE(task->flags & PF_KTHREAD))
+		return;
+
+	if (!fpregs_state_valid(fpu, cpu)) {
+		u64 mask;
+
+		mask = xfeatures_mask_restore_user() |
+			xfeatures_mask_supervisor();
+		__restore_fpregs_from_fpstate(&fpu->state, mask);
+
+		fpregs_activate(fpu);
+		fpu->last_cpu = cpu;
+	}
+	clear_ti_thread_flag(task_thread_info(task), TIF_NEED_FPU_LOAD);
+}
+
 #ifdef CONFIG_X86_DEBUG_FPU
 /*
  * If current FPU state according to its tracking (loaded FPU context on this

@@ -100,6 +100,7 @@
 #include <linux/kcsan.h>
 #include <linux/init_syscalls.h>
 #include <linux/stackdepot.h>
+#include <linux/hypiso.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -1512,6 +1513,8 @@ static int __ref kernel_init(void *unused)
 	exit_boot_config();
 	free_initmem();
 	mark_readonly();
+
+	hypiso_init();
 
 	/*
 	 * Kernel mappings are now finalized - update the userspace page-table
