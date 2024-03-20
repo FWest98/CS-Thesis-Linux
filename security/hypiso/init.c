@@ -1,3 +1,4 @@
+#include "linux/sched/task.h"
 #include <linux/topology.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
@@ -70,11 +71,20 @@ static struct task_struct *hypiso_spawn_runner(struct kvm_vcpu *vcpu)
 	struct task_struct *runner;
 	char name[TASK_COMM_LEN];
 	unsigned int old_flags = current->flags;
-	unsigned long clone_flags = CLONE_FILES | CLONE_FS | CLONE_IO
-				| CLONE_SIGHAND | CLONE_THREAD | CLONE_VM;
+	//unsigned long clone_flags = SIGCHLD;
 
 	current->flags |= PF_KTHREAD;
-	pid = kernel_thread(hypiso_runner, vcpu, clone_flags);
+	//pid = kernel_thread(hypiso_runner, vcpu, clone_flags);
+
+	struct kernel_clone_args args = {
+		.flags = ((lower_32_bits(SIGCHLD) | CLONE_UNTRACED) & ~CSIGNAL),
+		.exit_signal = (lower_32_bits(SIGCHLD) & CSIGNAL),
+		.stack = (unsigned long) hypiso_runner,
+		.stack_size = (unsigned long) vcpu,
+	};
+
+	pid = kernel_clone(&args);
+
 	current->flags = old_flags;
 
 	sched_setaffinity(pid, guest_cpus);
@@ -85,6 +95,9 @@ static struct task_struct *hypiso_spawn_runner(struct kvm_vcpu *vcpu)
 
 	printk("HYPISO: %s/%d:%d@%px is creating vcpu %llu\n", current->comm,
 		smp_processor_id(), current->pid, current, hypiso_nr_vcpus);
+
+	printk("FLORIS: For vcpu %llu, owner PGD %px and runner PGD %px\n",
+		hypiso_nr_vcpus, vcpu->owner->mm->pgd, runner->mm->pgd);
 
 	return runner;
 }
