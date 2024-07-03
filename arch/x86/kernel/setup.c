@@ -23,6 +23,7 @@
 #include <linux/usb/xhci-dbgp.h>
 #include <linux/static_call.h>
 #include <linux/swiotlb.h>
+#include <linux/shadowkvm.h>
 
 #include <uapi/linux/mount.h>
 
@@ -1020,6 +1021,10 @@ void __init setup_arch(char **cmdline_p)
 
 	memblock_set_current_limit(ISA_END_ADDRESS);
 	e820__memblock_setup();
+
+#ifdef CONFIG_SHADOWKVM
+	shadowkvm_e820_block();
+#endif
 
 	/*
 	 * Needs to run after memblock setup because it needs the physical

@@ -19,6 +19,7 @@
 #include <linux/kvm_host.h>
 #include "irq.h"
 #include "ioapic.h"
+#include "linux/printk.h"
 #include "mmu.h"
 #include "i8254.h"
 #include "tss.h"
@@ -34,6 +35,7 @@
 #include <linux/clocksource.h>
 #include <linux/interrupt.h>
 #include <linux/kvm.h>
+#include <linux/kvm_host.h>
 #include <linux/fs.h>
 #include <linux/vmalloc.h>
 #include <linux/export.h>
@@ -59,6 +61,7 @@
 #include <linux/mem_encrypt.h>
 #include <linux/entry-kvm.h>
 #include <linux/suspend.h>
+#include <linux/shadowkvm.h>
 
 #include <trace/events/kvm.h>
 
@@ -9998,6 +10001,28 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 {
 	struct kvm_run *kvm_run = vcpu->run;
 	int r;
+
+	static int print_count = 0;
+
+	if(unlikely(print_count == 0)) {
+		shadowkvm_vcpu_init(vcpu->kvm);
+
+		struct kvm_memslots *slots = __kvm_memslots(vcpu->kvm, 0);
+		struct kvm_memory_slot *tmp;
+
+		printk("VM Run; printing memory slots ASID 0\n");
+		kvm_for_each_memslot(tmp, slots) {
+			printk("Slot %d-%d: physical %x, virtual %x, %lld pages\n", tmp->as_id, tmp->id, gfn_to_gpa(tmp->base_gfn), tmp->userspace_addr, tmp->npages);
+		}
+
+		slots = __kvm_memslots(vcpu->kvm, 1);
+
+		printk("VM Run; printing memory slots ASID 1\n");
+		kvm_for_each_memslot(tmp, slots) {
+			printk("Slot %d-%d: physical %x, virtual %x, %lld pages\n", tmp->as_id, tmp->id, gfn_to_gpa(tmp->base_gfn), tmp->userspace_addr, tmp->npages);
+		}
+		print_count = 1;
+	}
 
 	vcpu_load(vcpu);
 	kvm_sigset_activate(vcpu);

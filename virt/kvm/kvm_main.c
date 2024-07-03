@@ -13,6 +13,7 @@
  *   Yaniv Kamay  <yaniv@qumranet.com>
  */
 
+#include "linux/printk.h"
 #include <kvm/iodev.h>
 
 #include <linux/kvm_host.h>
@@ -52,6 +53,7 @@
 #include <linux/lockdep.h>
 #include <linux/kthread.h>
 #include <linux/suspend.h>
+#include <linux/shadowkvm.h>
 
 #include <asm/processor.h>
 #include <asm/ioctl.h>
@@ -1704,6 +1706,9 @@ int __kvm_set_memory_region(struct kvm *kvm,
 	new.flags = mem->flags;
 	new.userspace_addr = mem->userspace_addr;
 
+	if(mem->slot == 65667)
+		printk("[SHADOWKVM] Debug checkpoint 2\n");
+
 	if (new.npages > KVM_MEM_MAX_NR_PAGES)
 		return -EINVAL;
 
@@ -1740,6 +1745,9 @@ int __kvm_set_memory_region(struct kvm *kvm,
 		}
 	}
 
+	if(mem->slot == 65667)
+		printk("[SHADOWKVM] Debug checkpoint 3\n");
+
 	/* Allocate/free page dirty bitmap as needed */
 	if (!(new.flags & KVM_MEM_LOG_DIRTY_PAGES))
 		new.dirty_bitmap = NULL;
@@ -1772,6 +1780,8 @@ int kvm_set_memory_region(struct kvm *kvm,
 {
 	int r;
 
+	//printk("[SHADOWKVM] Setting region { slot: %d; flags %x; GPA %lx; size %lx; HVA: %lx}\n", mem->slot, mem->flags, mem->guest_phys_addr, mem->memory_size, mem->userspace_addr);
+
 	mutex_lock(&kvm->slots_lock);
 	r = __kvm_set_memory_region(kvm, mem);
 	mutex_unlock(&kvm->slots_lock);
@@ -1784,6 +1794,8 @@ static int kvm_vm_ioctl_set_memory_region(struct kvm *kvm,
 {
 	if ((u16)mem->slot >= KVM_USER_MEM_SLOTS)
 		return -EINVAL;
+
+	shadowkvm_memory_intercept(kvm, mem);
 
 	return kvm_set_memory_region(kvm, mem);
 }
@@ -3643,6 +3655,9 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 	snprintf(vcpu->stats_id, sizeof(vcpu->stats_id), "kvm-%d/vcpu-%d",
 		 task_pid_nr(current), id);
 
+	shadowkvm_kernel_split(vcpu);
+	//shadowkvm_vcpu_init(kvm);
+
 	/* Now it's all set up, let userspace reach it */
 	kvm_get_kvm(kvm);
 	r = create_vcpu_fd(vcpu);
@@ -4646,6 +4661,9 @@ static int kvm_dev_ioctl_create_vm(unsigned long type)
 	kvm_uevent_notify_change(KVM_EVENT_CREATE_VM, kvm);
 
 	fd_install(r, file);
+
+	shadowkvm_vm_init(kvm);
+
 	return r;
 
 put_kvm:
