@@ -5,6 +5,12 @@
 
 menu "Security options"
 
+config KVMISO
+	bool "Isolate KVM memory"
+	default y
+	help
+	  Floris project mk II
+
 source "security/keys/Kconfig"
 
 config SECURITY_DMESG_RESTRICT
@@ -293,4 +299,3 @@ config LSM
 source "security/Kconfig.hardening"
 
 endmenu
-

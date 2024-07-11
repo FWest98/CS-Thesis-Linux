@@ -13,6 +13,7 @@
  *   Yaniv Kamay  <yaniv@qumranet.com>
  */
 
+#include "linux/kvmiso.h"
 #include <kvm/iodev.h>
 
 #include <linux/kvm_host.h>
@@ -1098,6 +1099,8 @@ static struct kvm *kvm_create_vm(unsigned long type)
 
 	preempt_notifier_inc();
 	kvm_init_pm_notifier(kvm);
+
+	kvmiso_vm_init(kvm);
 
 	return kvm;
 
