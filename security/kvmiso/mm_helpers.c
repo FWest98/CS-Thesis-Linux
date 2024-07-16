@@ -190,7 +190,7 @@ void dup_pmd_range(struct mm_struct *mm, unsigned long start, unsigned long end)
 			continue;
 
 		src = (pte_t*) pmd_page_vaddr(*pmd);
-		new = (pte_t*) pte_alloc_one(mm);
+		new = (pte_t*) page_address(pte_alloc_one(mm));
 		memcpy(new, src, sizeof(pte_t) * PTRS_PER_PTE);
 
 		pmd_populate_kernel(mm, pmd, new);
