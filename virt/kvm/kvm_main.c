@@ -52,6 +52,7 @@
 #include <linux/lockdep.h>
 #include <linux/kthread.h>
 #include <linux/suspend.h>
+#include <linux/kvmiso.h>
 
 #include <asm/processor.h>
 #include <asm/ioctl.h>
@@ -1253,6 +1254,8 @@ static struct kvm *kvm_create_vm(unsigned long type, const char *fdname)
 
 	preempt_notifier_inc();
 	kvm_init_pm_notifier(kvm);
+
+	kvmiso_vm_init(kvm);
 
 	return kvm;
 

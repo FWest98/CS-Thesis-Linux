@@ -62,6 +62,7 @@
 #include <linux/entry-kvm.h>
 #include <linux/suspend.h>
 #include <linux/smp.h>
+#include <linux/kvmiso.h>
 
 #include <trace/events/ipi.h>
 #include <trace/events/kvm.h>
@@ -11104,6 +11105,12 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	struct kvm_queued_exception *ex = &vcpu->arch.exception;
 	struct kvm_run *kvm_run = vcpu->run;
 	int r;
+
+	static int print_count = 0;
+	if(unlikely(print_count == 0)) {
+		kvmiso_run();
+		print_count = 1;
+	}
 
 	vcpu_load(vcpu);
 	kvm_sigset_activate(vcpu);
