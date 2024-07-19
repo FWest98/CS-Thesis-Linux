@@ -1793,7 +1793,7 @@ out:
 static int change_page_attr_set_clr(unsigned long *addr, int numpages,
 				    pgprot_t mask_set, pgprot_t mask_clr,
 				    int force_split, int in_flag,
-				    struct page **pages)
+				    struct page **pages, pgd_t *pgd)
 {
 	struct cpa_data cpa;
 	int ret, cache;
@@ -1845,6 +1845,7 @@ static int change_page_attr_set_clr(unsigned long *addr, int numpages,
 	cpa.flags = in_flag;
 	cpa.curpage = 0;
 	cpa.force_split = force_split;
+	cpa.pgd = pgd;
 
 	ret = __change_page_attr_set_clr(&cpa, 1);
 
@@ -1877,28 +1878,28 @@ static inline int change_page_attr_set(unsigned long *addr, int numpages,
 				       pgprot_t mask, int array)
 {
 	return change_page_attr_set_clr(addr, numpages, mask, __pgprot(0), 0,
-		(array ? CPA_ARRAY : 0), NULL);
+		(array ? CPA_ARRAY : 0), NULL, NULL);
 }
 
 static inline int change_page_attr_clear(unsigned long *addr, int numpages,
 					 pgprot_t mask, int array)
 {
 	return change_page_attr_set_clr(addr, numpages, __pgprot(0), mask, 0,
-		(array ? CPA_ARRAY : 0), NULL);
+		(array ? CPA_ARRAY : 0), NULL, NULL);
 }
 
 static inline int cpa_set_pages_array(struct page **pages, int numpages,
 				       pgprot_t mask)
 {
 	return change_page_attr_set_clr(NULL, numpages, mask, __pgprot(0), 0,
-		CPA_PAGES_ARRAY, pages);
+		CPA_PAGES_ARRAY, pages, NULL);
 }
 
 static inline int cpa_clear_pages_array(struct page **pages, int numpages,
 					 pgprot_t mask)
 {
 	return change_page_attr_set_clr(NULL, numpages, __pgprot(0), mask, 0,
-		CPA_PAGES_ARRAY, pages);
+		CPA_PAGES_ARRAY, pages, NULL);
 }
 
 /*
@@ -1911,7 +1912,7 @@ int __set_memory_prot(unsigned long addr, int numpages, pgprot_t prot)
 {
 	return change_page_attr_set_clr(&addr, numpages, prot,
 					__pgprot(~pgprot_val(prot)), 0, 0,
-					NULL);
+					NULL, NULL);
 }
 
 int _set_memory_uc(unsigned long addr, int numpages)
@@ -1963,7 +1964,7 @@ int _set_memory_wc(unsigned long addr, int numpages)
 		ret = change_page_attr_set_clr(&addr, numpages,
 					       cachemode2pgprot(_PAGE_CACHE_MODE_WC),
 					       __pgprot(_PAGE_CACHE_MASK),
-					       0, 0, NULL);
+					       0, 0, NULL, NULL);
 	}
 	return ret;
 }
@@ -2101,13 +2102,23 @@ int set_memory_np_noalias(unsigned long addr, int numpages)
 {
 	return change_page_attr_set_clr(&addr, numpages, __pgprot(0),
 					__pgprot(_PAGE_PRESENT), 0,
-					CPA_NO_CHECK_ALIAS, NULL);
+					CPA_NO_CHECK_ALIAS, NULL, NULL);
+}
+
+int set_memory_p_noalias_pgd(pgd_t *pgd, unsigned long addr, int numpages)
+{
+	return change_page_attr_set_clr(&addr, numpages, __pgprot(_PAGE_PRESENT), __pgprot(0), 0, CPA_NO_CHECK_ALIAS, NULL, pgd);
+}
+
+int set_memory_np_noalias_pgd(pgd_t *pgd, unsigned long addr, int numpages)
+{
+	return change_page_attr_set_clr(&addr, numpages, __pgprot(0), __pgprot(_PAGE_PRESENT), 0, CPA_NO_CHECK_ALIAS, NULL, pgd);
 }
 
 int set_memory_4k(unsigned long addr, int numpages)
 {
 	return change_page_attr_set_clr(&addr, numpages, __pgprot(0),
-					__pgprot(0), 1, 0, NULL);
+					__pgprot(0), 1, 0, NULL, NULL);
 }
 
 int set_memory_nonglobal(unsigned long addr, int numpages)
@@ -2233,7 +2244,7 @@ static int _set_pages_array(struct page **pages, int numpages,
 					       cachemode2pgprot(
 						_PAGE_CACHE_MODE_WC),
 					       __pgprot(_PAGE_CACHE_MASK),
-					       0, CPA_PAGES_ARRAY, pages);
+					       0, CPA_PAGES_ARRAY, pages, NULL);
 	if (ret)
 		goto err_out;
 	return 0; /* Success */

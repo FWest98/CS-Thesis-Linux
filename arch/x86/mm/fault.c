@@ -1157,6 +1157,73 @@ bool fault_in_kernel_space(unsigned long address)
 	return address >= TASK_SIZE_MAX;
 }
 
+#ifdef CONFIG_KVMISO
+static noinline int kvmiso_make_present(unsigned long address)
+{
+	pgd_t *pgd = pgd_offset_pgd(current->mm->pgd, address);
+	if(!pgd_present(*pgd)) {
+		printk("[KVMISO] Must make PGD present, NOT SUPPORTED");
+		return 1;
+	}
+
+	p4d_t *p4d = p4d_offset(pgd, address);
+	if(!p4d_present(*p4d)) {
+		printk("[KVMISO] Must make P4D present, NOT SUPPORTED");
+		return 1;
+	}
+
+	if(p4d_large(*p4d))
+		return 1;
+
+	pud_t *pud = pud_offset(p4d, address);
+	if(!pud_present(*pud)) {
+		printk("[KVMISO] Must make PUD present");
+
+		pgprot_t new_prot = pud_pgprot(*pud);
+		pgprot_val(new_prot) |= _PAGE_PRESENT;
+
+		pud_t new_pud = pfn_pud(pud_pfn(*pud), new_prot);
+		set_pud(pud, new_pud);
+
+		return 0;
+	}
+
+	if(pud_large(*pud))
+		return 1;
+
+	pmd_t *pmd = pmd_offset(pud, address);
+	if(!pmd_present(*pmd)) {
+		printk("[KVMISO] Must make PMD present");
+
+		pgprot_t new_prot = pmd_pgprot(*pmd);
+		pgprot_val(new_prot) |= _PAGE_PRESENT;
+
+		pmd_t new_pmd = pfn_pmd(pmd_pfn(*pmd), new_prot);
+		set_pmd(pmd, new_pmd);
+
+		return 0;
+	}
+
+	if(pmd_large(*pmd))
+		return 1;
+
+	pte_t *pte = pte_offset_kernel(pmd, address);
+	if(!pte_present(*pte)) {
+		printk("[KVMISO] Must make PTE present");
+
+		pgprot_t new_prot = pte_pgprot(*pte);
+		pgprot_val(new_prot) |= _PAGE_PRESENT;
+
+		pte_t new_pte = pfn_pte(pte_pfn(*pte), new_prot);
+		set_pte_atomic(pte, new_pte);
+
+		return 0;
+	}
+
+	return 1;
+}
+#endif
+
 /*
  * Called for all faults where 'address' is part of the kernel address
  * space.  Might get called for faults that originate from *code* that
@@ -1172,6 +1239,20 @@ do_kern_addr_fault(struct pt_regs *regs, unsigned long hw_error_code,
 	 * space, so do not expect them here.
 	 */
 	WARN_ON_ONCE(hw_error_code & X86_PF_PK);
+
+#ifdef CONFIG_KVMISO
+	// If we are in the direct map, we always try to mark the
+	// entry as present when it is not. Currently, only for PTEs.
+	if(unlikely(address > PAGE_OFFSET && address < VMALLOC_START)) {
+		if(likely(!(hw_error_code & X86_PF_PROT))) {
+			printk("[KVMISO] Page Fault on direct map");
+
+			int ret = kvmiso_make_present(address);
+			if(ret == 0)
+				return;
+		}
+	}
+#endif
 
 #ifdef CONFIG_X86_32
 	/*
