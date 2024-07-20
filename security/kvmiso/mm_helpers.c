@@ -216,31 +216,31 @@ void dump_pt_walk_mm(unsigned long address, struct mm_struct *mm)
 
 	idx = pgd_index(address);
 	pgd = pgd_offset(mm, address);
-	if (pgd_none(*pgd) || pgd_bad(*pgd))
-		return;
+	if (pgd_none(*pgd)) return;
 	pr_info("[WALK] PGD[%03i]         = ", idx);
 	pr_pgd(pgd);
+	if (pgd_bad(*pgd)) return;
 
 	idx = p4d_index(address);
 	p4d = p4d_offset(pgd, address);
-	if (p4d_none(*p4d) || p4d_bad(*p4d))
-		return;
+	if (p4d_none(*p4d)) return;
 	pr_info("[WALK]   P4D[%03i]       = ", idx);
 	pr_p4d(p4d);
+	if (p4d_bad(*p4d)) return;
 
 	idx = pud_index(address);
 	pud = pud_offset(p4d, address);
-	if (pud_none(*pud) || pud_bad(*pud))
-		return;
+	if (pud_none(*pud)) return;
 	pr_info("[WALK]     PUD[%03i]     = ", idx);
 	pr_pud(pud);
+	if (pud_bad(*pud)) return;
 
 	idx = pmd_index(address);
 	pmd = pmd_offset(pud, address);
-	if (pmd_none(*pmd) || pmd_bad(*pmd))
-		return;
+	if (pmd_none(*pmd)) return;
 	pr_info("[WALK]       PMD[%03i]   = ", idx);
 	pr_pmd(pmd);
+	if (pmd_bad(*pmd)) return;
 
 	idx = pte_index(address);
 	pte = pte_offset_kernel(pmd, address);
