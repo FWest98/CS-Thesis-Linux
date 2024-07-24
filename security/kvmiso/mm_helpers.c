@@ -85,7 +85,7 @@ void dup_pgd_range(struct mm_struct *mm, unsigned long start, unsigned long end)
 	start &= PGDIR_MASK;
 	end &= PGDIR_MASK; // end pointer is inclusive
 
-	for(cur = start; cur <= end; cur += PGDIR_SIZE) {
+	for(cur = start; cur < end; cur += PGDIR_SIZE) {
 		pgd = pgd_offset(mm, cur);
 
 		if(pgd_none(*pgd) || pgd_bad(*pgd))
@@ -115,7 +115,7 @@ void dup_p4d_range(struct mm_struct *mm, unsigned long start, unsigned long end)
 	start &= P4D_MASK;
 	end &= P4D_MASK; // end pointer is inclusive
 
-	for(cur = start; cur <= end; cur += P4D_SIZE) {
+	for(cur = start; cur < end; cur += P4D_SIZE) {
 		p4d = p4d_offset(pgd_offset(mm, cur), cur);
 
 		if(p4d_none(*p4d) || p4d_bad(*p4d))
@@ -153,7 +153,7 @@ void dup_pud_range(struct mm_struct *mm, unsigned long start, unsigned long end)
 	start &= PUD_MASK;
 	end &= PUD_MASK; // end pointer is inclusive
 
-	for(cur = start; cur <= end; cur += PUD_SIZE) {
+	for(cur = start; cur < end; cur += PUD_SIZE) {
 		pud = pud_offset(p4d_offset(pgd_offset(mm, cur), cur), cur);
 
 		if(pud_none(*pud) || pud_bad(*pud))
@@ -183,7 +183,7 @@ void dup_pmd_range(struct mm_struct *mm, unsigned long start, unsigned long end)
 	start &= PMD_MASK;
 	end &= PMD_MASK; // end pointer is inclusive
 
-	for(cur = start; cur <= end; cur += PMD_SIZE) {
+	for(cur = start; cur < end; cur += PMD_SIZE) {
 		pmd = pmd_offset(pud_offset(p4d_offset(pgd_offset(mm, cur), cur), cur), cur);
 
 		if(pmd_none(*pmd) || pmd_bad(*pmd))
@@ -490,9 +490,9 @@ uint64_t pgd_contiguous_end(struct mm_struct *mm, uint64_t start)
 		}
 	}
 
-	end = (i << PGDIR_SHIFT) - 1;
+	end = (i << PGDIR_SHIFT);
 
-	if(i >= KERNEL_PGD_BOUNDARY) {
+	if(i > KERNEL_PGD_BOUNDARY) { // not equals; since end is exclusive
 		end |= 0xffff000000000000ull;
 	}
 

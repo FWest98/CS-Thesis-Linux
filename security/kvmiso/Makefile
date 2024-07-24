@@ -1,3 +1,3 @@
 obj-$(CONFIG_KVMISO) += kvmiso.o
 
-kvmiso-y := mm.o mm_helpers.o
+kvmiso-y := mm.o mm_helpers.o dmap.o

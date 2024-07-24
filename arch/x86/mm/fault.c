@@ -1160,7 +1160,7 @@ bool fault_in_kernel_space(unsigned long address)
 #ifdef CONFIG_KVMISO
 static noinline int kvmiso_make_present(unsigned long address)
 {
-	pgd_t *pgd = pgd_offset_pgd(current->mm->pgd, address);
+	pgd_t *pgd = pgd_offset_pgd(current->active_mm->pgd, address);
 	if(!pgd_present(*pgd)) {
 		printk("[KVMISO] Must make PGD present, NOT SUPPORTED");
 		return 1;
@@ -1177,7 +1177,7 @@ static noinline int kvmiso_make_present(unsigned long address)
 
 	pud_t *pud = pud_offset(p4d, address);
 	if(!pud_present(*pud)) {
-		printk("[KVMISO] Must make PUD present");
+		pr_devel(KERN_CONT " PUD");
 
 		pgprot_t new_prot = pud_pgprot(*pud);
 		pgprot_val(new_prot) |= _PAGE_PRESENT | _PAGE_PSE;
@@ -1193,7 +1193,7 @@ static noinline int kvmiso_make_present(unsigned long address)
 
 	pmd_t *pmd = pmd_offset(pud, address);
 	if(!pmd_present(*pmd)) {
-		printk("[KVMISO] Must make PMD present");
+		pr_devel(KERN_CONT " PMD");
 
 		pgprot_t new_prot = pmd_pgprot(*pmd);
 		pgprot_val(new_prot) |= _PAGE_PRESENT | _PAGE_PSE;
@@ -1209,7 +1209,7 @@ static noinline int kvmiso_make_present(unsigned long address)
 
 	pte_t *pte = pte_offset_kernel(pmd, address);
 	if(!pte_present(*pte)) {
-		printk("[KVMISO] Must make PTE present");
+		pr_devel(KERN_CONT " PTE");
 
 		pgprot_t new_prot = pte_pgprot(*pte);
 		pgprot_val(new_prot) |= _PAGE_PRESENT;
@@ -1245,7 +1245,7 @@ do_kern_addr_fault(struct pt_regs *regs, unsigned long hw_error_code,
 	// entry as present when it is not. Currently, only for PTEs.
 	if(unlikely(address > PAGE_OFFSET && address < VMALLOC_START)) {
 		if(likely(!(hw_error_code & X86_PF_PROT))) {
-			printk("[KVMISO] Page Fault on direct map at 0x%lx", address);
+			pr_devel("[KVMISO] Page Fault on direct map at 0x%lx", address);
 
 			int ret = kvmiso_make_present(address);
 			if(ret == 0)
