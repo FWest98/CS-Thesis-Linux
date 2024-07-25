@@ -2,18 +2,28 @@
 #include "asm/tlbflush.h"
 #include "linux/fs.h"
 #include "linux/gfp.h"
+#include "linux/mm.h"
+#include "linux/page-flags.h"
 #include "linux/panic.h"
 #include "linux/static_call_types.h"
 #include "mm_helpers.h"
 #include <linux/mm_types.h>
 #include "dmap.h"
 
+#define DMAP_START __PAGE_OFFSET
+static struct direct_map_statistics current_statistics;
+
 struct direct_map_descriptor dmap_find()
 {
 	return (struct direct_map_descriptor) {
-		.start = __PAGE_OFFSET,
-		.end = pgd_contiguous_end(current->mm, __PAGE_OFFSET)
+		.start = DMAP_START,
+		.end = pgd_contiguous_end(current->mm, DMAP_START)
 	};
+}
+
+struct direct_map_statistics dmap_statistics()
+{
+	return current_statistics;
 }
 
 // Iterates over the direct map, splitting it up in "sections"
@@ -53,10 +63,21 @@ void dmap_iterate(direct_map_section_handler handler)
 		if(page_count(page) == 0) {
 			type = DIRECT_MAP_FREE;
 			goto handle_section;
-		} else {
-			type = DIRECT_MAP_USED;
+		}
+
+		if(page_has_type(page)) {
+			type = DIRECT_MAP_USED_KERNEL;
 			goto handle_section;
 		}
+
+		// Not YET in userspace, but also not guaranteed to be kernel
+		// space. Maybe we check other things such as RESERVED?
+		if(page_mapcount(page) == 0) {
+			type = DIRECT_MAP_UNKNOWN;
+			goto handle_section;
+		}
+
+		type = DIRECT_MAP_USED_USER;
 
 handle_section:
 		if(type == section.type) continue;
@@ -73,16 +94,39 @@ handle_section:
 	handler(section);
 }
 
-void dmap_unmap_section(struct direct_map_section section)
+void dmap_unmap_section_always(struct direct_map_section section)
 {
-	if(section.type != DIRECT_MAP_FREE) {
-		// pr_info("[KVMISO_DMAP] Cannot unmap non-free memory; type %d",
-		// 		section.type);
-		return;
-	}
-
 	int pagecount = (section.end - section.start) / PAGE_SIZE;
 	set_memory_np_noalias_pgd(current->mm->pgd, section.start, pagecount);
+}
+
+void dmap_unmap_section(struct direct_map_section section)
+{
+	// Currently, we unmap only free and USED_USER sections
+	if(section.type != DIRECT_MAP_FREE && section.type != DIRECT_MAP_USED_USER)
+		return;
+
+	dmap_unmap_section_always(section);
+}
+
+void dmap_statistics_section(struct direct_map_section section)
+{
+	// If the first address of this section is the start of the direct map,
+	// we are in a new run of statistics so we clear the previous result.
+	if(section.start == DMAP_START) {
+		current_statistics = (struct direct_map_statistics) {0};
+	}
+
+	unsigned long page_count = (section.end - section.start) / PAGE_SIZE;
+
+	switch(section.type) {
+		case DIRECT_MAP_UNKNOWN: current_statistics.unknown += page_count; break;
+		case DIRECT_MAP_FREE: current_statistics.free += page_count; break;
+		case DIRECT_MAP_USED_USER: current_statistics.used_user += page_count; break;
+		case DIRECT_MAP_USED_KERNEL: current_statistics.used_kernel += page_count; break;
+		case DIRECT_MAP_INVALID: current_statistics.invalid += page_count; break;
+		default: break;
+	}
 }
 
 void dmap_print_section(struct direct_map_section section)
@@ -92,7 +136,7 @@ void dmap_print_section(struct direct_map_section section)
 
 	// When we have consecutive section prints, we skip the start address
 	if(previous_print != section.start) {
-		pr_devel("[DMAP] >> 0x%lx", section.start);
+		pr_info("[DMAP] >> 0x%lx", section.start);
 		previous_print = section.start;
 	}
 
@@ -101,29 +145,34 @@ void dmap_print_section(struct direct_map_section section)
 
 	// Print depending on the type
 	switch(section.type) {
-		case DIRECT_MAP_USED: {
-			pr_devel("[DMAP] | Used for %lx pages",
+		case DIRECT_MAP_USED_KERNEL: {
+			pr_info("[DMAP] | Used KERNEL for 0x%lx pages",
+				(section.end - section.start) / PAGE_SIZE);
+			break;
+		}
+		case DIRECT_MAP_USED_USER: {
+			pr_info("[DMAP] | Used USER for 0x%lx pages",
 				(section.end - section.start) / PAGE_SIZE);
 			break;
 		}
 		case DIRECT_MAP_FREE: {
-			pr_devel("[DMAP] | Free for %lx pages",
+			pr_info("[DMAP] | Free for 0x%lx pages",
 				(section.end - section.start) / PAGE_SIZE);
 			break;
 		}
 		case DIRECT_MAP_INVALID: {
-			pr_devel("[DMAP] | Invalid for %lx pages",
+			pr_info("[DMAP] | Invalid for 0x%lx pages",
 				(section.end - section.start) / PAGE_SIZE);
 			break;
 		}
 		default: {
-			pr_devel("[DMAP] | Unknown type");
+			pr_info("[DMAP] | Unknown type");
 			break;
 		}
 	}
 
 	// Print end location
-	pr_devel("[DMAP] >> 0x%lx", section.end);
+	pr_info("[DMAP] >> 0x%lx", section.end);
 	previous_print = section.end;
 }
 

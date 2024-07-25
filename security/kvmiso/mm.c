@@ -35,6 +35,16 @@ void kvmiso_vm_init(struct kvm *kvm)
 
 	// Iterate over all pages in the direct map
 	dmap_iterate(&dmap_unmap_section);
+	//dmap_iterate(&dmap_print_section);
+	dmap_iterate(&dmap_statistics_section);
+
+	struct direct_map_statistics statistics = dmap_statistics();
+	printk("[KVMISO] Direct Map Statistics:");
+	printk("             Free: 0x%lx pages", statistics.free);
+	printk("             Invalid: 0x%lx pages", statistics.invalid);
+	printk("             Used - User: 0x%lx pages", statistics.used_user);
+	printk("             Used - Kernel: 0x%lx pages", statistics.used_kernel);
+	printk("             Unknown: 0x%lx pages", statistics.unknown);
 }
 
 void kvmiso_kernel_split(struct kvm_vcpu *vcpu)
