@@ -12,6 +12,8 @@ struct direct_map_statistics {
 	unsigned long used_user;
 	unsigned long invalid;
 	unsigned long unknown;
+	unsigned long anon;
+	unsigned long slab;
 };
 
 enum direct_map_section_type {
@@ -20,6 +22,8 @@ enum direct_map_section_type {
 	DIRECT_MAP_USED_USER,
 	DIRECT_MAP_FREE,
 	DIRECT_MAP_INVALID,
+	DIRECT_MAP_ANON,
+	DIRECT_MAP_SLAB,
 };
 
 struct direct_map_section {

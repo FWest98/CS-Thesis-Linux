@@ -70,9 +70,19 @@ void dmap_iterate(direct_map_section_handler handler)
 			goto handle_section;
 		}
 
+		if(PageSlab(page)) {
+			type = DIRECT_MAP_SLAB;
+			goto handle_section;
+		}
+
+		if(PageAnon(page)) {
+			type = DIRECT_MAP_ANON;
+			goto handle_section;
+		}
+
 		// Not YET in userspace, but also not guaranteed to be kernel
 		// space. Maybe we check other things such as RESERVED?
-		if(page_mapcount(page) == 0) {
+		if(!folio_mapped(page_folio(page))) {
 			type = DIRECT_MAP_UNKNOWN;
 			goto handle_section;
 		}
@@ -125,6 +135,8 @@ void dmap_statistics_section(struct direct_map_section section)
 		case DIRECT_MAP_USED_USER: current_statistics.used_user += page_count; break;
 		case DIRECT_MAP_USED_KERNEL: current_statistics.used_kernel += page_count; break;
 		case DIRECT_MAP_INVALID: current_statistics.invalid += page_count; break;
+		case DIRECT_MAP_ANON: current_statistics.anon += page_count; break;
+		case DIRECT_MAP_SLAB: current_statistics.slab += page_count; break;
 		default: break;
 	}
 }

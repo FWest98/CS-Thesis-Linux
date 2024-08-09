@@ -44,6 +44,8 @@ void kvmiso_vm_init(struct kvm *kvm)
 	printk("             Invalid: 0x%lx pages", statistics.invalid);
 	printk("             Used - User: 0x%lx pages", statistics.used_user);
 	printk("             Used - Kernel: 0x%lx pages", statistics.used_kernel);
+	printk("             Anon: 0x%lx pages", statistics.anon);
+	printk("             SLAB: 0x%lx pages", statistics.slab);
 	printk("             Unknown: 0x%lx pages", statistics.unknown);
 }
 
