@@ -1255,7 +1255,9 @@ static struct kvm *kvm_create_vm(unsigned long type, const char *fdname)
 	preempt_notifier_inc();
 	kvm_init_pm_notifier(kvm);
 
+#ifdef CONFIG_KVMISO
 	kvmiso_vm_init(kvm);
+#endif
 
 	return kvm;
 

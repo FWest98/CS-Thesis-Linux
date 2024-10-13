@@ -11106,11 +11106,13 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	struct kvm_run *kvm_run = vcpu->run;
 	int r;
 
+#ifdef CONFIG_KVMISO
 	static int print_count = 0;
 	if(unlikely(print_count == 0)) {
 		kvmiso_run();
 		print_count = 1;
 	}
+#endif
 
 	vcpu_load(vcpu);
 	kvm_sigset_activate(vcpu);

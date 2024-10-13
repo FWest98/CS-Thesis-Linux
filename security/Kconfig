@@ -8,10 +8,13 @@ menu "Security options"
 source "security/keys/Kconfig"
 
 config KVMISO
-	bool "Isolate KVM memory"
+	bool "Enable PageZero VM isolation"
 	default y
 	help
-	  Floris project mk II
+	  Protects KVM hypervisor from speculative execution attacks by
+	  splitting the kernel page tables for the direct map specifically,
+	  and unmapping direct map entires corresponding to free memory and
+	  memory for other user processes.
 
 config SECURITY_DMESG_RESTRICT
 	bool "Restrict unprivileged access to the kernel syslog"

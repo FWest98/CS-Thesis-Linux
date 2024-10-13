@@ -4523,7 +4523,10 @@ out:
 
 	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype);
 	kmsan_alloc_page(page, order, alloc_gfp);
+
+#ifdef CONFIG_KVMISO
 	page->is_kvm = 0;
+#endif
 
 	return page;
 }
