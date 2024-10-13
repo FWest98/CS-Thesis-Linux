@@ -15,6 +15,7 @@
  *          (lots of bits borrowed from Ingo Molnar & Andrew Morton)
  */
 
+#include "asm/set_memory.h"
 #include <linux/stddef.h>
 #include <linux/mm.h>
 #include <linux/highmem.h>
@@ -736,6 +737,73 @@ buddy_merge_likely(unsigned long pfn, unsigned long buddy_pfn,
 			NULL) != NULL;
 }
 
+#ifdef CONFIG_KVMISO
+static noinline int kvmiso_make_not_present(unsigned long address)
+{
+	pgd_t *pgd = pgd_offset_pgd(current->active_mm->pgd, address);
+	if(!pgd_present(*pgd)) {
+		printk("[KVMISO] Must make PGD non-present, NOT SUPPORTED");
+		return 1;
+	}
+
+	p4d_t *p4d = p4d_offset(pgd, address);
+	if(!p4d_present(*p4d)) {
+		printk("[KVMISO] Must make P4D non-present, NOT SUPPORTED");
+		return 1;
+	}
+
+	if(p4d_large(*p4d) || p4d_bad(*p4d))
+		return 1;
+
+	pud_t *pud = pud_offset(p4d, address);
+	if(!pud_present(*pud)) {
+		pr_devel(KERN_CONT " PUD");
+
+		pgprot_t new_prot = pud_pgprot(*pud);
+		pgprot_val(new_prot) &= ~(_PAGE_PRESENT | _PAGE_PSE);
+
+		pud_t new_pud = pfn_pud(pud_pfn(*pud), new_prot);
+		set_pud(pud, new_pud);
+
+		return 0;
+	}
+
+	if(pud_large(*pud) || pud_bad(*pud))
+		return 1;
+
+	pmd_t *pmd = pmd_offset(pud, address);
+	if(!pmd_present(*pmd)) {
+		pr_devel(KERN_CONT " PMD");
+
+		pgprot_t new_prot = pmd_pgprot(*pmd);
+		pgprot_val(new_prot) &= ~(_PAGE_PRESENT | _PAGE_PSE);
+
+		pmd_t new_pmd = pfn_pmd(pmd_pfn(*pmd), new_prot);
+		set_pmd(pmd, new_pmd);
+
+		return 0;
+	}
+
+	if(pmd_large(*pmd) || pmd_bad(*pmd))
+		return 1;
+
+	pte_t *pte = pte_offset_kernel(pmd, address);
+	if(!pte_present(*pte)) {
+		pr_devel(KERN_CONT " PTE");
+
+		pgprot_t new_prot = pte_pgprot(*pte);
+		pgprot_val(new_prot) &= ~_PAGE_PRESENT;
+
+		pte_t new_pte = pfn_pte(pte_pfn(*pte), new_prot);
+		set_pte_atomic(pte, new_pte);
+
+		return 0;
+	}
+
+	return 1;
+}
+#endif
+
 /*
  * Freeing function for a buddy system allocator.
  *
@@ -780,6 +848,14 @@ static inline void __free_one_page(struct page *page,
 
 	VM_BUG_ON_PAGE(pfn & ((1 << order) - 1), page);
 	VM_BUG_ON_PAGE(bad_range(zone, page), page);
+
+#ifdef CONFIG_KVMISO
+	if(page->is_kvm) {
+		printk("[BUDDY] Freeing KVM-mapped page PFN %lx", pfn);
+
+		kvmiso_make_not_present((unsigned long) page_to_virt(page));
+	}
+#endif
 
 	while (order < MAX_ORDER) {
 		if (compaction_capture(capc, page, order, migratetype)) {
@@ -4447,6 +4523,7 @@ out:
 
 	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype);
 	kmsan_alloc_page(page, order, alloc_gfp);
+	page->is_kvm = 0;
 
 	return page;
 }

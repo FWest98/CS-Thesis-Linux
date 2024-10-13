@@ -1160,6 +1160,9 @@ bool fault_in_kernel_space(unsigned long address)
 #ifdef CONFIG_KVMISO
 static noinline int kvmiso_make_present(unsigned long address)
 {
+	struct page *page = virt_to_page(address);
+	page->is_kvm = 1;
+
 	pgd_t *pgd = pgd_offset_pgd(current->active_mm->pgd, address);
 	if(!pgd_present(*pgd)) {
 		printk("[KVMISO] Must make PGD present, NOT SUPPORTED");
