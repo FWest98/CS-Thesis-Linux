@@ -46,6 +46,7 @@ void kvmiso_vm_init(struct kvm *kvm)
 	printk("             SLAB: 0x%lx pages", statistics.slab);
 	printk("             Unknown: 0x%lx pages", statistics.unknown);
 }
+EXPORT_SYMBOL(kvmiso_vm_init);
 
 void kvmiso_kernel_split(struct kvm_vcpu *vcpu)
 {
@@ -57,3 +58,4 @@ void kvmiso_run(void)
 	printk("[KVMISO] KVM Run");
 	dump_pt_walk((unsigned long) current->mm);
 }
+EXPORT_SYMBOL(kvmiso_run);
