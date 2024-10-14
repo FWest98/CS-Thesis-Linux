@@ -16,8 +16,6 @@ void kvmiso_vm_init(struct kvm *kvm)
 {
 	printk("[KVMISO] KVM Init\n");
 
-	memblock_dump_all();
-
 	dump_pt_walk((unsigned long) kvm->mm);
 
 	// Determine direct map start and end - assuming contiguous map
