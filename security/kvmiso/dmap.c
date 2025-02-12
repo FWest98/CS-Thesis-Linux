@@ -80,14 +80,14 @@ void dmap_iterate(direct_map_section_handler handler)
 			goto handle_section;
 		}
 
-		// Not YET in userspace, but also not guaranteed to be kernel
-		// space. Maybe we check other things such as RESERVED?
-		if(!folio_mapped(page_folio(page))) {
-			type = DIRECT_MAP_UNKNOWN;
+		if(folio_mapped(page_folio(page))) {
+			type = DIRECT_MAP_USED_USER;
 			goto handle_section;
 		}
 
-		type = DIRECT_MAP_USED_USER;
+		// Not YET in userspace, but also not guaranteed to be kernel
+		// space. Maybe we check other things such as RESERVED?
+		type = DIRECT_MAP_UNKNOWN;
 
 handle_section:
 		if(type == section.type) continue;
@@ -113,10 +113,12 @@ void dmap_unmap_section_always(struct direct_map_section section)
 void dmap_unmap_section(struct direct_map_section section)
 {
 	// Currently, we unmap only free and USED_USER sections
-	if(section.type != DIRECT_MAP_FREE && section.type != DIRECT_MAP_USED_USER)
-		return;
-
-	dmap_unmap_section_always(section);
+	if(
+		section.type == DIRECT_MAP_FREE
+		|| section.type == DIRECT_MAP_USED_USER
+		|| section.type == DIRECT_MAP_ANON
+	)
+		dmap_unmap_section_always(section);
 }
 
 void dmap_statistics_section(struct direct_map_section section)

@@ -56,6 +56,6 @@ void kvmiso_kernel_split(struct kvm_vcpu *vcpu)
 void kvmiso_run(void)
 {
 	printk("[KVMISO] KVM Run");
-	dump_pt_walk((unsigned long) current->mm);
+	//dump_pt_walk((unsigned long) current->mm);
 }
 EXPORT_SYMBOL(kvmiso_run);

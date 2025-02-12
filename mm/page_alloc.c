@@ -757,7 +757,7 @@ static noinline int kvmiso_make_not_present(unsigned long address)
 
 	pud_t *pud = pud_offset(p4d, address);
 	if(!pud_present(*pud)) {
-		pr_devel(KERN_CONT " PUD");
+		printk(KERN_CONT " PUD");
 
 		pgprot_t new_prot = pud_pgprot(*pud);
 		pgprot_val(new_prot) &= ~(_PAGE_PRESENT | _PAGE_PSE);
@@ -773,7 +773,7 @@ static noinline int kvmiso_make_not_present(unsigned long address)
 
 	pmd_t *pmd = pmd_offset(pud, address);
 	if(!pmd_present(*pmd)) {
-		pr_devel(KERN_CONT " PMD");
+		printk(KERN_CONT " PMD");
 
 		pgprot_t new_prot = pmd_pgprot(*pmd);
 		pgprot_val(new_prot) &= ~(_PAGE_PRESENT | _PAGE_PSE);
@@ -789,7 +789,7 @@ static noinline int kvmiso_make_not_present(unsigned long address)
 
 	pte_t *pte = pte_offset_kernel(pmd, address);
 	if(!pte_present(*pte)) {
-		pr_devel(KERN_CONT " PTE");
+		printk(KERN_CONT " PTE");
 
 		pgprot_t new_prot = pte_pgprot(*pte);
 		pgprot_val(new_prot) &= ~_PAGE_PRESENT;
